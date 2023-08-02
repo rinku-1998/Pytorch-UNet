@@ -40,20 +40,22 @@ def train_model(
 ):
     # 1. 建立資料集
     try:
-        dataset = CarvanaDataset(dir_img, dir_mask, img_scale)
+        train_dataset = CarvanaDataset(dir_img, dir_mask, img_scale)
+        val_dataset = CarvanaDataset(dir_img, dir_mask, img_scale, is_val=True)
     except (AssertionError, RuntimeError, IndexError):
-        dataset = BasicDataset(dir_img, dir_mask, img_scale)
+        train_dataset = BasicDataset(dir_img, dir_mask, img_scale)
+        val_dataset = BasicDataset(dir_img, dir_mask, img_scale, is_val=True)
 
     # 2. 分割訓練集與驗證集
-    n_val = int(len(dataset) * val_percent)
-    n_train = len(dataset) - n_val
-    train_set, val_set = random_split(
-        dataset, [n_train, n_val], generator=torch.Generator().manual_seed(0))
-    n_train = len(dataset)
+    n_val = int(len(val_dataset) * val_percent)
+    n_train = len(train_dataset) - n_val
+    _, val_set = random_split(
+        val_dataset, [n_train, n_val], generator=torch.Generator().manual_seed(0))
+    n_train = len(train_dataset)
 
     # 3. 建立 Dataloader
     loader_args = dict(batch_size=batch_size, num_workers=1, pin_memory=True)
-    train_loader = DataLoader(dataset, shuffle=True, **loader_args)
+    train_loader = DataLoader(train_dataset, shuffle=True, **loader_args)
     val_loader = DataLoader(val_set,
                             shuffle=False,
                             drop_last=True,
@@ -182,7 +184,7 @@ def train_model(
                             Path(dir_checkpoint).mkdir(parents=True,
                                                        exist_ok=True)
                             state_dict = model.state_dict()
-                            state_dict['mask_values'] = dataset.mask_values
+                            state_dict['mask_values'] = train_dataset.mask_values
                             torch.save(
                                 state_dict,
                                 str(dir_checkpoint /
@@ -219,7 +221,7 @@ def train_model(
     if save_checkpoint:
         Path(dir_checkpoint).mkdir(parents=True, exist_ok=True)
         state_dict = model.state_dict()
-        state_dict['mask_values'] = dataset.mask_values
+        state_dict['mask_values'] = train_dataset.mask_values
         torch.save(state_dict, str(dir_checkpoint / 'final.pth'))
         logging.info(f'Final checkpoint saved!')
 
