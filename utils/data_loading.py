@@ -44,7 +44,8 @@ class BasicDataset(Dataset):
                  images_dir: str,
                  mask_dir: str,
                  scale: float = 1.0,
-                 mask_suffix: str = ''):
+                 mask_suffix: str = '',
+                 is_val: bool = False):
         self.images_dir = Path(images_dir)
         self.mask_dir = Path(mask_dir)
         assert 0 < scale <= 1, 'Scale must be between 0 and 1'
@@ -75,23 +76,23 @@ class BasicDataset(Dataset):
         logging.info(f'Unique mask values: {self.mask_values}')
 
         self.transform = A.Compose([
-            A.Flip(p=0.2),
-            A.ToGray(p=0.2),
-            A.ColorJitter(p=0.2,
-                          brightness=0.2,
-                          contrast=0.2,
-                          saturation=0.2,
-                          hue=0.1),
+            A.Flip(p=0.3),
+            A.ColorJitter(p=0.3,
+                          brightness=0.3,
+                          contrast=0.3,
+                          saturation=0.3,
+                          hue=0.05),
+            A.OneOf([A.Blur(p=0.3, blur_limit=(3, 3))]),
             A.OneOf([
-                A.Blur(p=0.2, blur_limit=(3, 5)),
-                A.MedianBlur(p=0.2, blur_limit=(3, 5))
-            ]),
-            A.OneOf([A.Perspective(p=0.2),
-                     A.Rotate(p=0.2, limit=10)]),
-            A.CoarseDropout(p=0.2)
+                A.Rotate(p=0.3,
+                         crop_border=True,
+                         interpolation=cv2.INTER_CUBIC,
+                         limit=10)
+            ])
         ])
 
         self.target_shape = (512, 512)
+        self.is_val = is_val
 
     def __len__(self):
         return len(self.ids)
@@ -102,7 +103,7 @@ class BasicDataset(Dataset):
                           padding_val: int = 127) -> np.ndarray:
 
         # 1. 計算填充邊界所需要的空間
-        h_target, w_target = self.target_shape
+        h_target, w_target = target_shape
         new_h, new_w = img.shape[:2]
         top = int((h_target - new_h) / 2)
         bottom = h_target - new_h - top
@@ -127,23 +128,15 @@ class BasicDataset(Dataset):
         np_img = np.asarray(pil_img)
         np_mask = np.asarray(pil_mask)
 
-        np_img = cv2.cvtColor(np_img, cv2.COLOR_RGB2BGR)
-        np_mask = cv2.cvtColor(np_mask, cv2.COLOR_RGB2BGR)
-
         # 2. 資料增強
-        transformed = self.transform(image=np_img, mask=np_mask)
-        transformed_image = transformed['image']
-        transformed_mask = transformed['mask']
+        if not self.is_val:
+            transformed = self.transform(image=np_img, mask=np_mask)
+            np_img = transformed['image']
+            np_mask = transformed['mask']
 
-        # BGR to RGB
-        transformed_image = cv2.cvtColor(transformed_image, cv2.COLOR_BGR2RGB)
-        transformed_mask = cv2.cvtColor(transformed_mask, cv2.COLOR_BGR2RGB)
-        
         # 3. 填充邊界
-        img_filled = self.padding_to_square(transformed_image,
-                                            self.target_shape)
-        mask_filled = self.padding_to_square(transformed_mask,
-                                             self.target_shape, 0)
+        img_filled = self.padding_to_square(np_img, self.target_shape)
+        mask_filled = self.padding_to_square(np_mask, self.target_shape, 0)
 
         # 4. 整理資料
         # 取得資料
@@ -201,5 +194,9 @@ class BasicDataset(Dataset):
 
 class CarvanaDataset(BasicDataset):
 
-    def __init__(self, images_dir, mask_dir, scale=1):
-        super().__init__(images_dir, mask_dir, scale, mask_suffix='_mask')
+    def __init__(self, images_dir, mask_dir, scale=1, is_val=False):
+        super().__init__(images_dir,
+                         mask_dir,
+                         scale,
+                         mask_suffix='_mask',
+                         is_val=is_val)
